@@ -3,6 +3,7 @@ plugins {
 }
 
 android {
+    namespace 'whats.app.meme'
     compileSdk 32
 
     buildFeatures{
