@@ -1,9 +1,11 @@
 package whats.app.meme.utils;
 
 import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
@@ -16,8 +18,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+
+import whats.app.meme.model.Meme;
 
 public class MemeStorage {
     private static final String PREF_NAME = "MemeFavorites";
@@ -43,6 +49,11 @@ public class MemeStorage {
             favorites.remove(url);
         }
         sharedPreferences.edit().putStringSet(KEY_FAVORITES, favorites).apply();
+    }
+
+    public List<String> getFavoriteMemes() {
+        Set<String> favorites = sharedPreferences.getStringSet(KEY_FAVORITES, new HashSet<>());
+        return new ArrayList<>(favorites);
     }
 
     public Uri saveImageToCache(Bitmap bitmap) {
@@ -94,7 +105,6 @@ public class MemeStorage {
                 FileOutputStream fos = new FileOutputStream(imageFile);
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
                 fos.close();
-                // Add the image to the system gallery
                 galleryAddPic(imageFile.getAbsolutePath());
                 return imageFile.getAbsolutePath();
             } catch (Exception e) {
@@ -102,6 +112,46 @@ public class MemeStorage {
             }
         }
         return null;
+    }
+
+    public List<Uri> getSavedMemes() {
+        List<Uri> imageUris = new ArrayList<>();
+        ContentResolver contentResolver = context.getContentResolver();
+        Uri collection;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL);
+        } else {
+            collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+        }
+
+        String[] projection = new String[]{
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DISPLAY_NAME,
+                MediaStore.Images.Media.RELATIVE_PATH
+        };
+
+        // Note: RELATIVE_PATH is only available on Q+. For older versions, we might need checking DATA path (deprecated).
+        // For simplicity in this modernization, we focus on querying everything and filtering by name convention or assuming folder structure.
+        // Or simpler: just query all images and let user see all? No, user wants Saved Memes.
+        // We can filter by DISPLAY_NAME starting with "MEME_" which we use.
+
+        String selection = MediaStore.Images.Media.DISPLAY_NAME + " LIKE ?";
+        String[] selectionArgs = new String[]{"MEME_%"};
+        String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC";
+
+        try (Cursor cursor = contentResolver.query(collection, projection, selection, selectionArgs, sortOrder)) {
+            if (cursor != null) {
+                int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
+                while (cursor.moveToNext()) {
+                    long id = cursor.getLong(idColumn);
+                    Uri contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+                    imageUris.add(contentUri);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return imageUris;
     }
 
     private void galleryAddPic(String imagePath) {
