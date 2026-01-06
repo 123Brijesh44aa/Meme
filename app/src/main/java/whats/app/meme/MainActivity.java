@@ -1,152 +1,213 @@
 package whats.app.meme;
 
-import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
-
-import android.app.ActivityManager;
-import android.app.ProgressDialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.MediaStore;
-import android.service.chooser.ChooserTargetService;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.Spinner;
+import android.widget.TextView;
+import android.widget.Toast;
 
-import com.android.volley.Request;
-import com.android.volley.Response;
-import com.android.volley.VolleyError;
-import com.android.volley.toolbox.JsonObjectRequest;
-import com.android.volley.toolbox.Volley;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+
 import com.bumptech.glide.Glide;
-import com.bumptech.glide.load.DataSource;
-import com.bumptech.glide.load.engine.GlideException;
-import com.bumptech.glide.request.RequestListener;
-import com.bumptech.glide.request.target.Target;
-import com.google.android.material.snackbar.Snackbar;
-import com.squareup.picasso.Picasso;
+import com.bumptech.glide.request.target.CustomTarget;
+import com.bumptech.glide.request.transition.Transition;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import java.io.ByteArrayOutputStream;
-
-import whats.app.meme.databinding.ActivityMainBinding;
+import whats.app.meme.data.MemeRepository;
+import whats.app.meme.model.Meme;
+import whats.app.meme.utils.MemeStorage;
 
 public class MainActivity extends AppCompatActivity {
-    ActivityMainBinding binding;
-    private String currentImageUrl=null;
-    private ProgressDialog progressDialog;
-    private String url="https://meme-api.herokuapp.com/gimme";
-    private JsonObjectRequest jsonObjectRequest;
 
+    private MemeRepository memeRepository;
+    private MemeStorage memeStorage;
+    private Meme currentMeme;
+    private String currentSubreddit = "Random";
+
+    private ImageView imageView;
+    private TextView memeTitle;
+    private TextView memeAuthor;
+    private ProgressBar progressBar;
+    private ImageButton btnFavorite;
+    private ExtendedFloatingActionButton btnNext;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        binding=ActivityMainBinding.inflate(getLayoutInflater());
-        setContentView(binding.getRoot());
+        setContentView(R.layout.activity_main);
 
+        memeRepository = new MemeRepository(this);
+        memeStorage = new MemeStorage(this);
 
-        progressDialog=new ProgressDialog(this);
-        progressDialog.setMessage("loading...");
-
+        initViews();
+        setupSpinner();
         loadMeme();
+    }
 
-        binding.send.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-//                Intent intent=new Intent(Intent.ACTION_SEND);
-//                Uri uri=Uri.parse(currentImageUrl);
-//                intent.setType("image/jpg");
-//                intent.putExtra(Intent.EXTRA_STREAM,"Hey! Checkout this cool meme.\n"+uri);
-//                startActivity(Intent.createChooser(intent,"Share this using..."));
+    private void initViews() {
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
 
-                shareItem(currentImageUrl);
+        imageView = findViewById(R.id.imageView);
+        memeTitle = findViewById(R.id.memeTitle);
+        memeAuthor = findViewById(R.id.memeAuthor);
+        progressBar = findViewById(R.id.progressBar);
+        btnFavorite = findViewById(R.id.btnFavorite);
+        btnNext = findViewById(R.id.btnNext);
+        // Using findViewById without casting to MaterialButton since XML defines Button but style/theme makes it Material
+        View btnShare = findViewById(R.id.btnShare);
+        View btnSave = findViewById(R.id.btnSave);
+
+        btnNext.setOnClickListener(v -> loadMeme());
+
+        btnShare.setOnClickListener(v -> {
+            if (currentMeme != null) {
+                shareMeme();
             }
         });
 
-        binding.load.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                loadMeme();
+        btnSave.setOnClickListener(v -> {
+            if (currentMeme != null) {
+                saveMeme();
             }
         });
+
+        btnFavorite.setOnClickListener(v -> toggleFavorite());
     }
 
-    private void shareItem(String ImageUrl) {
-       Picasso.get().load(ImageUrl).into(new com.squareup.picasso.Target() {
-           @Override
-           public void onBitmapLoaded(Bitmap bitmap, Picasso.LoadedFrom from) {
-               Intent intent=new Intent(Intent.ACTION_SEND);
-               intent.setType("image/*");
-               intent.putExtra(Intent.EXTRA_STREAM, getUriFromBitmap(bitmap) );
-               startActivity(Intent.createChooser(intent,"Share this using..."));
-           }
+    private void setupSpinner() {
+        Spinner spinner = findViewById(R.id.categorySpinner);
+        String[] categories = {"Random", "memes", "dankmemes", "wholesomememes", "ProgrammerHumor", "funny"};
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, categories);
+        spinner.setAdapter(adapter);
 
-           @Override
-           public void onBitmapFailed(Exception e, Drawable errorDrawable) {
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String selected = categories[position];
+                if (!selected.equals(currentSubreddit)) {
+                    currentSubreddit = selected;
+                    loadMeme();
+                }
+            }
 
-           }
-
-           @Override
-           public void onPrepareLoad(Drawable placeHolderDrawable) {
-
-           }
-       });
-    }
-
-    private Uri getUriFromBitmap(Bitmap bitmap) {
-        ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-        bitmap.compress(Bitmap.CompressFormat.PNG,100, bytes);
-        String path= MediaStore.Images.Media.insertImage(getApplicationContext().getContentResolver(),bitmap,"Title",null);
-        return Uri.parse(path);
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
     }
 
     private void loadMeme() {
-
-        //show loading progress dialogue
-        progressDialog.show();
-
-        //create  JsonObject Request
-        jsonObjectRequest=new JsonObjectRequest(Request.Method.GET,url,null, new Response.Listener<JSONObject>() {
+        progressBar.setVisibility(View.VISIBLE);
+        memeRepository.fetchMeme(currentSubreddit, new MemeRepository.MemeCallback() {
             @Override
-            public void onResponse(JSONObject response) {
-                try {
-                    currentImageUrl=response.getString("url");
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
-                /*
-                using glide library to load the meme image in ImageView
-                with added request listener to hide progress bar when image is loaded.
-                 */
-                Glide.with(MainActivity.this).load(currentImageUrl).listener(new RequestListener<Drawable>() {
-                    @Override
-                    public boolean onLoadFailed(@Nullable GlideException e, Object model, Target<Drawable> target, boolean isFirstResource) {
-                        progressDialog.dismiss();
-                        return false;
-                    }
-
-                    @Override
-                    public boolean onResourceReady(Drawable resource, Object model, Target<Drawable> target, DataSource dataSource, boolean isFirstResource) {
-                        progressDialog.dismiss();
-                        return false;
-                    }
-                }).into(binding.imageView);
-
+            public void onSuccess(Meme meme) {
+                currentMeme = meme;
+                updateUI(meme);
             }
-        }, new Response.ErrorListener() {
+
             @Override
-            public void onErrorResponse(VolleyError error) {
-                Snackbar.make(binding.layout,error.getMessage(),Snackbar.LENGTH_LONG).show();
+            public void onError(String error) {
+                progressBar.setVisibility(View.GONE);
+                Toast.makeText(MainActivity.this, error, Toast.LENGTH_SHORT).show();
             }
         });
-
-        VolleySingleton.getInstance(getApplicationContext()).addToRequestQue(jsonObjectRequest);
     }
 
+    private void updateUI(Meme meme) {
+        memeTitle.setText(meme.getTitle());
+        memeAuthor.setText("u/" + meme.getAuthor());
+        updateFavoriteIcon();
 
+        Glide.with(this)
+                .load(meme.getUrl())
+                .listener(new com.bumptech.glide.request.RequestListener<Drawable>() {
+                    @Override
+                    public boolean onLoadFailed(@Nullable com.bumptech.glide.load.engine.GlideException e, Object model, com.bumptech.glide.request.target.Target<Drawable> target, boolean isFirstResource) {
+                        progressBar.setVisibility(View.GONE);
+                        return false;
+                    }
+
+                    @Override
+                    public boolean onResourceReady(Drawable resource, Object model, com.bumptech.glide.request.target.Target<Drawable> target, com.bumptech.glide.load.DataSource dataSource, boolean isFirstResource) {
+                        progressBar.setVisibility(View.GONE);
+                        return false;
+                    }
+                })
+                .into(imageView);
+    }
+
+    private void toggleFavorite() {
+        if (currentMeme == null) return;
+        boolean isFav = memeStorage.isFavorite(currentMeme.getUrl());
+        memeStorage.setFavorite(currentMeme.getUrl(), !isFav);
+        updateFavoriteIcon();
+        String msg = !isFav ? "Added to Favorites" : "Removed from Favorites";
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+    }
+
+    private void updateFavoriteIcon() {
+        if (currentMeme == null) return;
+        boolean isFav = memeStorage.isFavorite(currentMeme.getUrl());
+        btnFavorite.setImageResource(isFav ? android.R.drawable.star_big_on : android.R.drawable.star_big_off);
+    }
+
+    private void shareMeme() {
+        Glide.with(this)
+                .asBitmap()
+                .load(currentMeme.getUrl())
+                .into(new CustomTarget<Bitmap>() {
+                    @Override
+                    public void onResourceReady(@NonNull Bitmap resource, @Nullable Transition<? super Bitmap> transition) {
+                        Uri uri = memeStorage.saveImageToCache(resource);
+                        if (uri != null) {
+                            Intent intent = new Intent(Intent.ACTION_SEND);
+                            intent.setType("image/png");
+                            intent.putExtra(Intent.EXTRA_STREAM, uri);
+                            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            startActivity(Intent.createChooser(intent, "Share Meme via..."));
+                        } else {
+                            Toast.makeText(MainActivity.this, "Failed to prepare image for sharing", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+
+                    @Override
+                    public void onLoadCleared(@Nullable Drawable placeholder) {
+                    }
+                });
+    }
+
+    private void saveMeme() {
+        Glide.with(this)
+                .asBitmap()
+                .load(currentMeme.getUrl())
+                .into(new CustomTarget<Bitmap>() {
+                    @Override
+                    public void onResourceReady(@NonNull Bitmap resource, @Nullable Transition<? super Bitmap> transition) {
+                        String path = memeStorage.saveImageToGallery(resource, currentMeme.getTitle());
+                        if (path != null) {
+                            Toast.makeText(MainActivity.this, "Saved to " + path, Toast.LENGTH_LONG).show();
+                        } else {
+                            Toast.makeText(MainActivity.this, "Failed to save image", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+
+                    @Override
+                    public void onLoadCleared(@Nullable Drawable placeholder) {
+                    }
+                });
+    }
 }
