@@ -4,11 +4,7 @@ plugins {
 
 android {
     namespace 'whats.app.meme'
-<<<<<<< HEAD
-    compileSdk 32
-=======
     compileSdk 34
->>>>>>> 863324a6cb18d3e0aa95ef8e1c375f0dce705d68
 
     buildFeatures{
         viewBinding true
