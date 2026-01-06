@@ -14,7 +14,7 @@ import whats.app.meme.VolleySingleton;
 import whats.app.meme.model.Meme;
 
 public class MemeRepository {
-    private static final String BASE_URL = "https://meme-api.herokuapp.com/gimme";
+    private static final String BASE_URL = "https://meme-api.com/gimme";
     private final Context context;
     private final Gson gson;
 
